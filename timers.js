@@ -14,12 +14,12 @@
     'use strict';
 
     function parseTimeString(timeString) {
-        const regex = /(\d+)\s*hrs?,?\s*(\d+)\s*minutes?,?\s*(\d+)\s*seconds?/;
+        const regex = /(?:(\d+)\s*(?:hrs?|hours?))?\s*,?\s*(?:(\d+)\s*(?:mins?|minutes?))?\s*,?\s*(?:(\d+)\s*(?:secs?|seconds?))?/;
         const matches = timeString.match(regex);
         if (matches) {
-            const hours = parseInt(matches[1]);
-            const minutes = parseInt(matches[2]);
-            const seconds = parseInt(matches[3]);
+            const hours = parseInt(matches[1]) || 0;
+            const minutes = parseInt(matches[2]) || 0;
+            const seconds = parseInt(matches[3]) || 0;
             return hours * 3600 + minutes * 60 + seconds;
         }
         return 0;
@@ -47,7 +47,7 @@
                             const timerName = prevRow.textContent.trim().split(' ')[0];
                             GM_setValue(`timer_${timerIndex}`, timerName);
                             GM_setValue(`eventEndTime_${timerName}`, endTime);
-                            console.log(`Remaining time set for "${timerName}":`, timeString);
+                            console.log(`Remaining time set for ${timerName}:`, timeString);
                             timerIndex++;
                         }
                     }
@@ -62,19 +62,20 @@
                 // retry until the timer loads
                 function checkGdRemaining() {
                     const timeString = gdRemainingElement.textContent.trim();
-                    if (timeString !== '...') {
-                        const totalSeconds = parseTimeString(timeString);
-                        const endTime = Date.now() + totalSeconds * 1000;
-    
-                        const timerName = 'gdRemaining';
-                        GM_setValue(`timer_${timerIndex}`, timerName);
-                        GM_setValue(`eventEndTime_${timerName}`, endTime);
-                        console.log(`Remaining time set for "${timerName}":`, timeString);
-                    } else {
+                    if (timeString === '...') {
                         setTimeout(checkGdRemaining, 100);
+                    } else {
+                        const totalSeconds = parseTimeString(timeString);
+                        if (totalSeconds > 0) {
+                            const endTime = Date.now() + totalSeconds * 1000;
+                            const timerName = 'Grave Danger';
+                            GM_setValue(`timer_${timerIndex}`, timerName);
+                            GM_setValue(`eventEndTime_${timerName}`, endTime);
+                            console.log(`Remaining time set for ${timerName}:`, timeString);
+                        }
                     }
                 }
-    
+                
                 checkGdRemaining();
             }
         }
@@ -97,7 +98,7 @@
                 if (remainingTime <= 0) {
                     GM_notification({
                         title: 'Event Time Reminder',
-                        text: `The event time for "${timerName}" is up!`,
+                        text: `The event time for ${timerName} is up!`,
                         timeout: 5000
                     });
                     GM_deleteValue(`eventEndTime_${timerName}`);
