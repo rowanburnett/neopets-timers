@@ -8,6 +8,7 @@
 // @grant        GM_setValue
 // @grant        GM_deleteValue
 // @grant        GM_notification
+// @grant        GM_listValues
 // ==/UserScript==
 
 (function() {
@@ -25,9 +26,28 @@
         return 0;
     }
 
-    function setRemainingTime() {
-        let timerIndex = 0;
+    function setTimerInfo(timerName, timeString) {
+        const totalSeconds = parseTimeString(timeString);
+        const endTime = Date.now() + totalSeconds * 1000;
+        if (!GM_getValue(`eventEndTime_${timerName}`, 0)) {
+            GM_setValue(`eventEndTime_${timerName}`, endTime);
+            console.log(`Remaining time set for ${timerName}:`, timeString);
+        }
+    }
 
+    function setTimerInfo(timerName, timeString) {
+        const remainingSeconds = parseTimeString(timeString);
+        const endTime = Date.now() + remainingSeconds * 1000;
+        const currentURL = window.location.href;
+        if (!GM_getValue(`endTime_${timerName}`, 0)) {
+            GM_setValue(`endTime_${timerName}`, endTime);
+            GM_setValue(`url_${timerName}`, currentURL);
+            console.log(`Remaining time set for ${timerName}:`, timeString);
+            scheduleNextReminder();
+        }
+    }
+
+    function setRemainingTime() {
         // Training
         if (window.location.href.includes('training.phtml?type=status' || 'academy.phtml?type=status')) {
             const timeElements = document.querySelectorAll('b');
@@ -36,19 +56,12 @@
             for (const element of timeElements) {
                 const timeString = element.textContent.trim();
                 if (timeRegex.test(timeString)) {
-                    const totalSeconds = parseTimeString(timeString);
-                    const endTime = Date.now() + totalSeconds * 1000;
-
-                    // get pet name from the previous element
                     const tableRow = element.closest('tr');
                     if (tableRow) {
                         const prevRow = tableRow.previousElementSibling;
                         if (prevRow) {
                             const timerName = prevRow.textContent.trim().split(' ')[0];
-                            GM_setValue(`timer_${timerIndex}`, timerName);
-                            GM_setValue(`eventEndTime_${timerName}`, endTime);
-                            console.log(`Remaining time set for ${timerName}:`, timeString);
-                            timerIndex++;
+                            setTimerInfo(timerName, timeString);
                         }
                     }
                 }
@@ -59,56 +72,53 @@
         if (window.location.href.includes('gravedanger')) {
             const gdRemainingElement = document.getElementById('gdRemaining');
             if (gdRemainingElement) {
-                // retry until the timer loads
                 function checkGdRemaining() {
                     const timeString = gdRemainingElement.textContent.trim();
                     if (timeString === '...') {
                         setTimeout(checkGdRemaining, 100);
                     } else {
-                        const totalSeconds = parseTimeString(timeString);
-                        if (totalSeconds > 0) {
-                            const endTime = Date.now() + totalSeconds * 1000;
-                            const timerName = 'Grave Danger';
-                            GM_setValue(`timer_${timerIndex}`, timerName);
-                            GM_setValue(`eventEndTime_${timerName}`, endTime);
-                            console.log(`Remaining time set for ${timerName}:`, timeString);
-                        }
+                        setTimerInfo('Grave Danger', timeString);
                     }
                 }
-                
                 checkGdRemaining();
             }
         }
     }
 
-    function checkRemainingTime() {
-        const timerNames = [];
-        let i = 0;
-        let timerName = GM_getValue(`timer_${i}`, null);
-        while (timerName !== null) {
-            timerNames.push(timerName);
-            i++;
-            timerName = GM_getValue(`timer_${i}`, null);
-        }
+    function scheduleNextReminder() {
+        const timerNames = GM_listValues().filter(key => key.startsWith('endTime_')).map(key => key.replace('endTime_', ''));
+
+        let earliestRemainingTime = Infinity;
+        let earliestTimerName = null;
 
         for (const timerName of timerNames) {
-            const endTime = GM_getValue(`eventEndTime_${timerName}`, 0);
+            const endTime = GM_getValue(`endTime_${timerName}`, 0);
             if (endTime) {
                 const remainingTime = endTime - Date.now();
-                if (remainingTime <= 0) {
-                    GM_notification({
-                        title: 'Event Time Reminder',
-                        text: `The event time for ${timerName} is up!`,
-                        timeout: 5000
-                    });
-                    GM_deleteValue(`eventEndTime_${timerName}`);
-                    GM_deleteValue(`timer_${timerNames.indexOf(timerName)}`);
+                if (remainingTime < earliestRemainingTime) {
+                    earliestRemainingTime = remainingTime;
+                    earliestTimerName = timerName;
                 }
             }
+        }
+
+        if (earliestTimerName) {
+            const redirectURL = GM_getValue(`url_${earliestTimerName}`, '');
+            setTimeout(() => {
+                GM_notification({
+                    title: 'Event Time Reminder',
+                    text: `The event time for ${earliestTimerName} is up!`,
+                    timeout: 5000,
+                    onclick: () => {
+                        window.open(redirectURL, '_blank');
+                    }
+                });
+                GM_deleteValue(`endTime_${earliestTimerName}`);
+                GM_deleteValue(`url_${earliestTimerName}`);
+                scheduleNextReminder();
+            }, earliestRemainingTime);
         }
     }
 
     setRemainingTime();
-
-    setInterval(checkRemainingTime, 1000);
 })();
